@@ -570,6 +570,8 @@
                 this.saveSettings = this.saveSettings.bind(this);
                 this.showFocusStats = this.showFocusStats.bind(this);
                 this.showFocusStatsFromHome = this.showFocusStatsFromHome.bind(this);
+                this.addTask = this.addTask.bind(this);
+                this.deleteTask = this.deleteTask.bind(this);
 
                 this.initListeners();
                 this.scheduleTaskAlarms();
@@ -587,7 +589,463 @@
                             label: label,
                             data: [],
                             backgroundColor: type === "doughnut" ? ["#4CAF50", "#f44336"] : "rgba(75, 192, 192, 0.2)",
-                            borderColor: "                const userEntry = leaderboard.find(u => u.email === this.user?.email);
+                            borderColor: "rgba(75, 192, 192, 1)",
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        animation: {
+                            duration: 1000,
+                            easing: 'easeInOutQuad'
+                        },
+                        scales: type !== "doughnut" ? {
+                            y: { beginAtZero: true }
+                        } : {},
+                        plugins: {
+                            legend: { display: type === "doughnut" },
+                            tooltip: {
+                                callbacks: {
+                                    label: (context) => {
+                                        const label = context.label || '';
+                                        const value = context.raw || 0;
+                                        return `${label}: ${value} tasks`;
+                                    }
+                                }
+                            },
+                            datalabels: {
+                                formatter: (value, context) => {
+                                    const total = context.dataset.data.reduce((sum, val) => sum + val, 0);
+                                    const percentage = total ? Math.round((value / total) * 100) : 0;
+                                    return `${percentage}%`;
+                                },
+                                color: '#fff',
+                                font: {
+                                    weight: 'bold'
+                                }
+                            }
+                        }
+                    },
+                    plugins: [ChartDataLabels]
+                });
+            }
+
+            initListeners() {
+                document.getElementById("email-signin")?.addEventListener("click", () => this.emailSignIn());
+                document.getElementById("instagram-signin")?.addEventListener("click", () => this.instagramSignIn());
+                document.getElementById("hamburger")?.addEventListener("click", this.toggleSidebar);
+                this.elements.overlay.addEventListener("click", this.toggleSidebar);
+                this.elements.startBtn.addEventListener("click", this.toggleTimer);
+                this.elements.resetBtn.addEventListener("click", this.resetTimer);
+                this.elements.emergencyExit.addEventListener("click", this.emergencyExit);
+                document.getElementById("add-task-btn")?.addEventListener("click", this.addTask);
+                document.getElementById("theme-toggle")?.addEventListener("click", this.toggleTheme);
+                document.getElementById("fullscreen-toggle")?.addEventListener("click", this.toggleFullscreen);
+                document.getElementById("save-profile")?.addEventListener("click", this.saveProfile);
+                document.getElementById("edit-profile")?.addEventListener("click", this.editProfile);
+                document.getElementById("save-settings")?.addEventListener("click", this.saveSettings);
+                document.getElementById("save-audio")?.addEventListener("click", () => {
+                    const fileInput = document.getElementById("audio-upload");
+                    this.loadAudio({ target: fileInput });
+                });
+                document.getElementById("focus-stats-btn")?.addEventListener("click", this.showFocusStats);
+                document.getElementById("view-detailed-stats")?.addEventListener("click", this.showFocusStatsFromHome);
+                document.getElementById("tab-day")?.addEventListener("click", () => this.switchTab("day"));
+                document.getElementById("tab-week")?.addEventListener("click", () => this.switchTab("week"));
+                document.getElementById("tab-month")?.addEventListener("click", () => this.switchTab("month"));
+                document.getElementById("tab-custom")?.addEventListener("click", () => this.switchTab("custom"));
+            }
+
+            emailSignIn() {
+                const email = prompt("Enter your email:");
+                const password = prompt("Enter your password:");
+                if (email && password) {
+                    this.user = { email, password, ip: "192.168.1.1", name: "", about: "", photo: "", xp: 0, level: 0, streak: 0, history: [], tasks: [], settings: { work: 25, break: 5 } };
+                    localStorage.setItem("user", JSON.stringify(this.user));
+                    this.updateProfileDisplay();
+                    this.updateHistory();
+                    this.updateStreak();
+                    this.updateCharts();
+                    this.updateLeaderboard();
+                    showToast("Signed in successfully!");
+                }
+            }
+
+            instagramSignIn() {
+                showToast("Instagram Sign-In is not implemented yet.");
+            }
+
+            toggleSidebar() {
+                this.elements.sidebar.classList.toggle("active");
+                this.elements.overlay.classList.toggle("active");
+                this.elements.gridContainer.classList.toggle("active");
+            }
+
+            toggleTheme() {
+                document.body.classList.toggle("dark-mode");
+                localStorage.setItem("theme", document.body.classList.contains("dark-mode") ? "dark" : "light");
+                showToast("Theme toggled!");
+            }
+
+            toggleFullscreen() {
+                if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen().catch(err => {
+                        console.error("Error attempting to enable fullscreen:", err);
+                        showToast("Fullscreen mode not supported.");
+                    });
+                } else {
+                    document.exitFullscreen();
+                }
+            }
+
+            toggleTimer() {
+                if (this.isRunning) {
+                    this.pauseTimer();
+                } else {
+                    this.startTimer();
+                    this.toggleFullscreen();
+                    this.elements.emergencyExit.style.display = "block";
+                }
+            }
+
+            startTimer() {
+                if (!this.tasks.length) {
+                    showToast("Add a task first!");
+                    return;
+                }
+                this.isRunning = true;
+                this.elements.startBtn.textContent = "Pause";
+                this.timerInterval = setInterval(() => this.updateTimer(), 1000);
+                this.playAudio();
+            }
+
+            pauseTimer() {
+                this.isRunning = false;
+                this.elements.startBtn.textContent = "Resume";
+                clearInterval(this.timerInterval);
+                this.pauseAudio();
+            }
+
+            resetTimer() {
+                this.isRunning = false;
+                this.currentTime = this.isBreak ? this.breakDuration : this.workDuration;
+                this.updateDisplay();
+                this.elements.startBtn.textContent = "Start";
+                clearInterval(this.timerInterval);
+                this.pauseAudio();
+                if (document.fullscreenElement) document.exitFullscreen();
+                this.elements.emergencyExit.style.display = "none";
+            }
+
+            emergencyExit() {
+                this.resetTimer();
+            }
+
+            addTask() {
+                const taskInput = document.getElementById("task-input").value;
+                const taskDate = document.getElementById("task-date").value;
+                if (taskInput && taskDate) {
+                    const task = { name: taskInput, date: new Date(taskDate), completed: false };
+                    this.tasks.push(task);
+                    this.updateTasks();
+                    this.updateUser();
+                    document.getElementById("task-input").value = "";
+                    document.getElementById("task-date").value = "";
+                    showToast("Task added successfully!");
+                } else {
+                    showToast("Please enter a task and select a date/time.");
+                }
+            }
+
+            updateTasks() {
+                this.elements.taskFlowchart.innerHTML = "";
+                this.tasks.forEach((task, index) => {
+                    const taskItem = document.createElement("div");
+                    taskItem.className = "task-item";
+                    taskItem.innerHTML = `
+                        ${new Date(task.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${task.name}
+                        <button onclick="pomo.deleteTask(${index})">Delete</button>
+                    `;
+                    this.elements.taskFlowchart.appendChild(taskItem);
+                });
+                this.updateAnalysisChart();
+            }
+
+            deleteTask(index) {
+                this.tasks.splice(index, 1);
+                this.updateTasks();
+                this.updateUser();
+                showToast("Task deleted!");
+            }
+
+            loadAudio(e) {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                        this.audioFile = reader.result;
+                        this.audio = new Audio(this.audioFile);
+                        localStorage.setItem("customAudio", this.audioFile);
+                        document.getElementById("audio-status").textContent = "Audio saved successfully!";
+                        showToast("Audio saved successfully!");
+                    };
+                    reader.onerror = () => {
+                        document.getElementById("audio-status").textContent = "Error loading audio.";
+                        showToast("Error loading audio.");
+                    };
+                    reader.readAsDataURL(file);
+                } else {
+                    document.getElementById("audio-status").textContent = "No audio file selected.";
+                    showToast("No audio file selected.");
+                }
+            }
+
+            playAudio() {
+                if (this.audioFile) {
+                    this.audio.loop = true;
+                    this.audio.play().catch(err => {
+                        console.error("Error playing audio:", err);
+                        showToast("Error playing audio.");
+                    });
+                }
+            }
+
+            pauseAudio() {
+                if (this.audioFile) {
+                    this.audio.pause();
+                }
+            }
+
+            updateTimer() {
+                if (this.currentTime > 0) {
+                    this.currentTime--;
+                    this.updateDisplay();
+                } else {
+                    if (!this.isBreak) {
+                        this.completeTask();
+                        this.isBreak = true;
+                        this.currentTime = this.breakDuration;
+                        showToast("Pomodoro completed! Starting break...");
+                    } else {
+                        this.isBreak = false;
+                        this.currentTime = this.workDuration;
+                        this.addXP(CONFIG.XP_PER_POMODORO);
+                        this.updateStreak();
+                        this.addHistory();
+                        showToast("Break over! Ready for next Pomodoro?");
+                    }
+                    this.resetTimer();
+                }
+            }
+
+            updateDisplay() {
+                const minutes = Math.floor(this.currentTime / 60);
+                const seconds = this.currentTime % 60;
+                this.elements.timer.textContent = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+                const progress = (1 - this.currentTime / (this.isBreak ? this.breakDuration : this.workDuration)) * 100;
+                this.elements.progressBar.style.width = `${progress}%`;
+            }
+
+            completeTask() {
+                if (this.tasks.length) {
+                    this.tasks[0].completed = true;
+                    this.updateTasks();
+                }
+            }
+
+            addXP(points) {
+                this.xp += points;
+                const prevLevel = this.level;
+                this.level = Math.floor(this.xp / CONFIG.LEVEL_THRESHOLD);
+                this.elements.xpDisplay.textContent = this.xp;
+                this.elements.levelDisplay.textContent = this.level;
+                if (this.level > prevLevel) {
+                    showToast(`Congratulations! You've reached Level ${this.level}!`);
+                }
+                this.updateCharts();
+                this.updateUser();
+                this.updateLeaderboard();
+            }
+
+            updateStreak() {
+                const today = new Date().toLocaleDateString();
+                const lastSession = this.history.length ? new Date(this.history[this.history.length - 1].date).toLocaleDateString() : null;
+                if (lastSession && lastSession !== today) {
+                    const yesterday = new Date();
+                    yesterday.setDate(yesterday.getDate() - 1);
+                    if (lastSession === yesterday.toLocaleDateString()) {
+                        this.streak++;
+                    } else {
+                        this.streak = 1;
+                    }
+                } else if (!lastSession) {
+                    this.streak = 1;
+                }
+                this.elements.streakCount.textContent = this.streak;
+                this.updateUser();
+            }
+
+            addHistory() {
+                const session = {
+                    date: new Date(),
+                    task: this.tasks.length ? this.tasks[0].name : "No Task",
+                    xp: CONFIG.XP_PER_POMODORO
+                };
+                this.history.push(session);
+                this.updateHistory();
+                this.updateUser();
+            }
+
+            updateHistory() {
+                this.elements.history.innerHTML = "";
+                this.history.forEach(session => {
+                    const p = document.createElement("p");
+                    p.textContent = `✅ ${new Date(session.date).toLocaleString()} - Task: ${session.task} - XP: ${session.xp}`;
+                    this.elements.history.appendChild(p);
+                });
+                this.updateCharts();
+            }
+
+            updateCharts() {
+                if (!this.charts.xp || !this.charts.weekly || !this.charts.analysis) return;
+
+                this.charts.xp.data.labels = this.history.map(h => new Date(h.date).toLocaleDateString());
+                this.charts.xp.data.datasets[0].data = this.history.map((_, i) => this.history.slice(0, i + 1).reduce((sum, h) => sum + h.xp, 0));
+                this.charts.xp.update();
+
+                const weeklyData = Array(7).fill(0);
+                const today = new Date();
+                this.history.forEach(h => {
+                    const date = new Date(h.date);
+                    const diffDays = Math.floor((today - date) / (1000 * 60 * 60 * 24));
+                    if (diffDays >= 0 && diffDays < 7) {
+                        weeklyData[6 - diffDays]++;
+                    }
+                });
+                this.charts.weekly.data.labels = ["6d ago", "5d ago", "4d ago", "3d ago", "2d ago", "Yesterday", "Today"];
+                this.charts.weekly.data.datasets[0].data = weeklyData;
+                this.charts.weekly.update();
+
+                this.updateAnalysisChart();
+                this.updateFocusStats();
+            }
+
+            updateAnalysisChart() {
+                if (!this.charts.analysis) return;
+                const completed = this.tasks.filter(t => t.completed).length;
+                const pending = this.tasks.length - completed;
+                this.charts.analysis.data.labels = ["Completed", "Pending"];
+                this.charts.analysis.data.datasets[0].data = [completed, pending];
+                this.charts.analysis.update();
+            }
+
+            updateFocusStats() {
+                if (!this.elements.todayPomos || !this.elements.todayFocus || !this.elements.totalPomos || !this.elements.totalFocus || !this.elements.focusRecord) return;
+
+                const today = new Date().toLocaleDateString();
+                const todaySessions = this.history.filter(h => new Date(h.date).toLocaleDateString() === today);
+                const todayPomos = todaySessions.length;
+                const todayFocus = todayPomos * (this.workDuration / 60);
+                this.elements.todayPomos.textContent = todayPomos;
+                this.elements.todayFocus.textContent = `${todayFocus} minutes`;
+
+                const totalPomos = this.history.length;
+                const totalFocus = totalPomos * (this.workDuration / 60);
+                const focusRecord = Math.max(...Object.values(this.history.reduce((acc, h) => {
+                    const day = new Date(h.date).toLocaleDateString();
+                    acc[day] = (acc[day] || 0) + 1;
+                    return acc;
+                }, {})) * (this.workDuration / 60), 0);
+                this.elements.totalPomos.textContent = totalPomos;
+                this.elements.totalFocus.textContent = `${totalFocus} minutes`;
+                this.elements.focusRecord.textContent = `${focusRecord} minutes`;
+
+                this.updateTimelineChart("day");
+                this.updateMostFocusedChart("day");
+            }
+
+            updateTimelineChart(range) {
+                if (!this.charts.timeline) return;
+                const today = new Date();
+                let labels = [];
+                let data = [];
+                if (range === "day") {
+                    labels = Array(24).fill(0).map((_, i) => `${i}:00`);
+                    data = Array(24).fill(0);
+                    this.history.forEach(h => {
+                        const date = new Date(h.date);
+                        if (date.toLocaleDateString() === today.toLocaleDateString()) {
+                            const hour = date.getHours();
+                            data[hour]++;
+                        }
+                    });
+                } else if (range === "week") {
+                    labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+                    data = Array(7).fill(0);
+                    this.history.forEach(h => {
+                        const date = new Date(h.date);
+                        const diffDays = (today.getDay() - date.getDay() + 7) % 7;
+                        if (Math.floor((today - date) / (1000 * 60 * 60 * 24)) < 7) {
+                            data[6 - diffDays]++;
+                        }
+                    });
+                } else if (range === "month") {
+                    labels = Array(30).fill(0).map((_, i) => `Day ${i + 1}`);
+                    data = Array(30).fill(0);
+                    this.history.forEach(h => {
+                        const date = new Date(h.date);
+                        const diffDays = Math.floor((today - date) / (1000 * 60 * 60 * 24));
+                        if (diffDays >= 0 && diffDays < 30) {
+                            data[29 - diffDays]++;
+                        }
+                    });
+                }
+                this.charts.timeline.data.labels = labels;
+                this.charts.timeline.data.datasets[0].data = data;
+                this.charts.timeline.update();
+            }
+
+            updateMostFocusedChart(range) {
+                if (!this.charts.mostFocused) return;
+                const focusTimes = {};
+                this.history.forEach(h => {
+                    const date = new Date(h.date);
+                    let key;
+                    if (range === "day") {
+                        key = `${date.getHours()}:00`;
+                        }
+                    focusTimes[key] = (focusTimes[key] || 0) + 1;
+                });
+                const labels = Object.keys(focusTimes);
+                const data = Object.values(focusTimes);
+                this.charts.mostFocused.data.labels = labels;
+                this.charts.mostFocused.data.datasets[0].data = data;
+                this.charts.mostFocused.update();
+            }
+
+            switchTab(range) {
+                document.querySelectorAll(".tab").forEach(tab => {
+                    tab.classList.remove("active");
+                    tab.setAttribute("aria-selected", "false");
+                });
+                const activeTab = document.getElementById(`tab-${range}`);
+                activeTab.classList.add("active");
+                activeTab.setAttribute("aria-selected", "true");
+                this.updateTimelineChart(range);
+                this.updateMostFocusedChart(range);
+            }
+
+            showFocusStats() {
+                this.elements.focusStats.classList.toggle("active");
+            }
+
+            showFocusStatsFromHome() {
+                this.toggleSidebar();
+                this.showFocusStats();
+            }
+
+            updateLeaderboard() {
+                const leaderboard = JSON.parse(localStorage.getItem("leaderboard")) || [];
+                const userEntry = leaderboard.find(u => u.email === this.user?.email);
                 if (userEntry) {
                     userEntry.xp = this.xp;
                     userEntry.level = this.level;
@@ -713,3 +1171,4 @@
     </script>
 </body>
 </html>
+ 
